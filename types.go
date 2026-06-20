@@ -1,6 +1,9 @@
 package main
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 const (
 	GearTypeSki    = "雪板"
@@ -47,13 +50,32 @@ const (
 	GearStatusRented    = "借出中"
 )
 
+var ValidGearStatuses = map[string]bool{
+	GearStatusAvailable: true,
+	GearStatusRented:    true,
+}
+
 type Gear struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Size     string `json:"size"`
-	Deposit  int    `json:"deposit"`
-	Status   string `json:"status"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Size    string `json:"size"`
+	Deposit int    `json:"deposit"`
+	Status  string `json:"status"`
+}
+
+func (g Gear) Validate() error {
+	if !ValidGearTypes[g.Type] {
+		return fmt.Errorf("雪具类型非法 %q，只能是：雪板/雪鞋/头盔/护具/雪仗", g.Type)
+	}
+	if !ValidGearStatuses[g.Status] {
+		return fmt.Errorf("雪具状态非法 %q，只能是：在库/借出中", g.Status)
+	}
+	return nil
+}
+
+func (g Gear) IsAvailable() bool {
+	return g.Status == GearStatusAvailable
 }
 
 type Member struct {
@@ -65,12 +87,19 @@ type Member struct {
 }
 
 type RentRecord struct {
-	GearID       string `json:"gear_id"`
-	MemberID     string `json:"member_id"`
-	RentDateStr  string `json:"rent_date"`
-	Returned     bool   `json:"returned"`
+	GearID        string `json:"gear_id"`
+	MemberID      string `json:"member_id"`
+	RentDateStr   string `json:"rent_date"`
+	Returned      bool   `json:"returned"`
 	ReturnDateStr string `json:"return_date,omitempty"`
-	Condition    string `json:"condition,omitempty"`
+	Condition     string `json:"condition,omitempty"`
+}
+
+func (r RentRecord) Validate() error {
+	if r.Condition != "" && !ValidConditions[r.Condition] {
+		return fmt.Errorf("归还状况非法 %q，只能是：完好/轻微磨损/有损坏", r.Condition)
+	}
+	return nil
 }
 
 type DataStore struct {
@@ -79,17 +108,21 @@ type DataStore struct {
 	Rents   []RentRecord `json:"rents"`
 }
 
+func parseDateUTC(s string) (time.Time, error) {
+	return time.Parse("2006-01-02", s)
+}
+
 func (m Member) ParseExpire() (time.Time, error) {
-	return time.Parse("2006-01-02", m.ExpireStr)
+	return parseDateUTC(m.ExpireStr)
 }
 
 func (r RentRecord) ParseRentDate() (time.Time, error) {
-	return time.Parse("2006-01-02", r.RentDateStr)
+	return parseDateUTC(r.RentDateStr)
 }
 
 func (r RentRecord) ParseReturnDate() (time.Time, error) {
 	if r.ReturnDateStr == "" {
 		return time.Time{}, nil
 	}
-	return time.Parse("2006-01-02", r.ReturnDateStr)
+	return parseDateUTC(r.ReturnDateStr)
 }

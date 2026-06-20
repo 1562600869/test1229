@@ -6,8 +6,16 @@ import (
 )
 
 func CmdAddGear(id, name, gearType, size string, deposit int) error {
-	if !ValidGearTypes[gearType] {
-		return fmt.Errorf("雪具类型非法，只能是：雪板/雪鞋/头盔/护具/雪仗")
+	gear := Gear{
+		ID:      id,
+		Name:    name,
+		Type:    gearType,
+		Size:    size,
+		Deposit: deposit,
+		Status:  GearStatusAvailable,
+	}
+	if err := gear.Validate(); err != nil {
+		return err
 	}
 	if deposit < 0 {
 		return fmt.Errorf("押金不能为负数")
@@ -18,14 +26,6 @@ func CmdAddGear(id, name, gearType, size string, deposit int) error {
 	}
 	if store.FindGear(id) != nil {
 		return fmt.Errorf("雪具ID %s 已存在", id)
-	}
-	gear := Gear{
-		ID:      id,
-		Name:    name,
-		Type:    gearType,
-		Size:    size,
-		Deposit: deposit,
-		Status:  GearStatusAvailable,
 	}
 	store.Gears = append(store.Gears, gear)
 	if err := SaveData(store); err != nil {
@@ -39,7 +39,7 @@ func CmdAddMember(id, name, phone, memberType, expire string) error {
 	if !ValidMemberTypes[memberType] {
 		return fmt.Errorf("会员类型非法，只能是：日卡/季卡/年卡")
 	}
-	if _, err := time.Parse("2006-01-02", expire); err != nil {
+	if _, err := parseDateUTC(expire); err != nil {
 		return fmt.Errorf("有效期格式错误，应为 2006-01-02: %w", err)
 	}
 	store, err := LoadData()
@@ -65,7 +65,7 @@ func CmdAddMember(id, name, phone, memberType, expire string) error {
 }
 
 func CmdRent(gearID, memberID, date string) error {
-	if _, err := time.Parse("2006-01-02", date); err != nil {
+	if _, err := parseDateUTC(date); err != nil {
 		return fmt.Errorf("日期格式错误，应为 2006-01-02: %w", err)
 	}
 	store, err := LoadData()
@@ -76,7 +76,7 @@ func CmdRent(gearID, memberID, date string) error {
 	if gear == nil {
 		return fmt.Errorf("雪具 %s 不存在", gearID)
 	}
-	if gear.Status != GearStatusAvailable {
+	if !gear.IsAvailable() {
 		return fmt.Errorf("雪具 %s 当前状态为 %s，无法借出", gearID, gear.Status)
 	}
 	member := store.FindMember(memberID)
@@ -87,7 +87,7 @@ func CmdRent(gearID, memberID, date string) error {
 	if err != nil {
 		return fmt.Errorf("会员有效期解析失败: %w", err)
 	}
-	rentDate, _ := time.Parse("2006-01-02", date)
+	rentDate, _ := parseDateUTC(date)
 	if rentDate.After(expire) {
 		return fmt.Errorf("会员 %s 的有效期至 %s，已过期", memberID, member.ExpireStr)
 	}
@@ -107,10 +107,11 @@ func CmdRent(gearID, memberID, date string) error {
 }
 
 func CmdReturn(gearID, condition, date string) error {
-	if !ValidConditions[condition] {
-		return fmt.Errorf("归还状况非法，只能是：完好/轻微磨损/有损坏")
+	record := RentRecord{Condition: condition}
+	if err := record.Validate(); err != nil {
+		return err
 	}
-	if _, err := time.Parse("2006-01-02", date); err != nil {
+	if _, err := parseDateUTC(date); err != nil {
 		return fmt.Errorf("日期格式错误，应为 2006-01-02: %w", err)
 	}
 	store, err := LoadData()
@@ -145,7 +146,7 @@ func CmdReturn(gearID, condition, date string) error {
 }
 
 func CmdDaily(date string) error {
-	if _, err := time.Parse("2006-01-02", date); err != nil {
+	if _, err := parseDateUTC(date); err != nil {
 		return fmt.Errorf("日期格式错误，应为 2006-01-02: %w", err)
 	}
 	store, err := LoadData()
@@ -175,7 +176,7 @@ func CmdOverdue() error {
 	if err != nil {
 		return err
 	}
-	today := time.Now()
+	today := time.Now().UTC()
 	found := false
 	for _, r := range store.Rents {
 		if r.Returned {
